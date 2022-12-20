@@ -295,14 +295,14 @@ func (st *StateTransition) buyGas(gasBailout bool) error {
 }
 
 func CheckEip1559TxGasFeeCap(from common.Address, gasFeeCap, tip, baseFee *uint256.Int, isFree bool) error {
-	if gasFeeCap.Lt(tip) {
-		return fmt.Errorf("%w: address %v, tip: %s, gasFeeCap: %s", ErrTipAboveFeeCap,
-			from.Hex(), tip, gasFeeCap)
-	}
-	if baseFee != nil && gasFeeCap.Lt(baseFee) && !isFree {
-		return fmt.Errorf("%w: address %v, gasFeeCap: %s baseFee: %s", ErrFeeCapTooLow,
-			from.Hex(), gasFeeCap, baseFee)
-	}
+	// if gasFeeCap.Lt(tip) {
+	// 	return fmt.Errorf("%w: address %v, tip: %s, gasFeeCap: %s", ErrTipAboveFeeCap,
+	// 		from.Hex(), tip, gasFeeCap)
+	// }
+	// if baseFee != nil && gasFeeCap.Lt(baseFee) && !isFree {
+	// 	return fmt.Errorf("%w: address %v, gasFeeCap: %s baseFee: %s", ErrFeeCapTooLow,
+	// 		from.Hex(), gasFeeCap, baseFee)
+	// }
 	return nil
 }
 
