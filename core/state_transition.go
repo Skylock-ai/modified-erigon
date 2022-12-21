@@ -257,26 +257,26 @@ func (st *StateTransition) buyGas(gasBailout bool) error {
 	mgval := st.sharedBuyGas
 	mgval.SetUint64(st.msg.Gas())
 	mgval, overflow := mgval.MulOverflow(mgval, st.gasPrice)
-	if overflow {
-		return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
-	}
+	// if overflow {
+	// 	return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
+	// }
 	balanceCheck := mgval
 	if st.gasFeeCap != nil {
 		balanceCheck = st.sharedBuyGasBalance.SetUint64(st.msg.Gas())
 		balanceCheck, overflow = balanceCheck.MulOverflow(balanceCheck, st.gasFeeCap)
-		if overflow {
-			return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
-		}
+		// if overflow {
+		// 	return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
+		// }
 		balanceCheck, overflow = balanceCheck.AddOverflow(balanceCheck, st.value)
-		if overflow {
-			return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
-		}
+		// if overflow {
+		// 	return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
+		// }
 	}
 	var subBalance = false
 	if have, want := st.state.GetBalance(st.msg.From()), balanceCheck; have.Cmp(want) < 0 {
-		if !gasBailout {
-			return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, st.msg.From().Hex(), have, want)
-		}
+		// if !gasBailout {
+		// 	return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, st.msg.From().Hex(), have, want)
+		// }
 	} else {
 		subBalance = true
 	}
