@@ -1,0 +1,4 @@
+t=2022-12-29T19:08:13+0000 lvl=info msg="logging to file system" log dir=/home/dwu/node/modified-erigon/logs file prefix=debug log level=dbug json=false
+t=2023-01-18T04:03:32+0000 lvl=info msg="logging to file system" log dir=/home/dwu/node/modified-erigon/logs file prefix=debug log level=dbug json=false
+t=2023-01-18T19:27:22+0000 lvl=info msg="logging to file system" log dir=/home/dwu/node/modified-erigon/logs file prefix=debug log level=dbug json=false
+t=2023-01-18T19:54:42+0000 lvl=info msg="logging to file system" log dir=/home/dwu/node/modified-erigon/logs file prefix=debug log level=dbug json=false
