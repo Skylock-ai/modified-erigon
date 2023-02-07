@@ -481,19 +481,14 @@ func (hd *HeaderDownload) RequestSkeleton() *HeaderRequest {
 	hd.lock.RLock()
 	defer hd.lock.RUnlock()
 	log.Debug("[Downloader] Request skeleton", "anchors", len(hd.anchors), "highestInDb", hd.highestInDb)
-	var stride uint64
-	if hd.initialCycle {
-		stride = 192
-	}
+	stride := uint64(192)
 	var length uint64 = 192
 	// Include one header that we have already, to make sure the responses are not empty and do not get penalised when we are at the tip of the chain
 	from := hd.highestInDb
-	if from <= 1 {
+	if from == 0 {
 		from = 1
-	} else {
-		from--
 	}
-	return &HeaderRequest{Number: from, Length: length, Skip: stride, Reverse: false}
+	return &HeaderRequest{Number: from, Length: length, Skip: stride - 1, Reverse: false}
 }
 
 func (hd *HeaderDownload) VerifyHeader(header *types.Header) error {

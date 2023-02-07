@@ -2,12 +2,11 @@ package commands
 
 import (
 	"context"
-	"strings"
 
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon/common/debug"
-	"github.com/ledgerwatch/erigon/core/types"
+	"github.com/ledgerwatch/erigon/common/hexutil"
 	"github.com/ledgerwatch/erigon/eth/filters"
 	"github.com/ledgerwatch/erigon/rpc"
 	"github.com/ledgerwatch/erigon/turbo/rpchelper"
@@ -52,38 +51,42 @@ func (api *APIImpl) NewFilter(_ context.Context, crit filters.FilterCriteria) (s
 			api.filters.AddLogs(id, lg)
 		}
 	}()
-	return "0x" + string(id), nil
+	return hexutil.EncodeUint64(uint64(id)), nil
 }
 
 // UninstallFilter new transaction filter
-func (api *APIImpl) UninstallFilter(_ context.Context, index string) (isDeleted bool, err error) {
+func (api *APIImpl) UninstallFilter(_ context.Context, index string) (bool, error) {
 	if api.filters == nil {
 		return false, rpc.ErrNotificationsUnsupported
 	}
+	var isDeleted bool
 	// remove 0x
-	cutIndex := strings.TrimPrefix(index, "0x")
-	if ok := api.filters.UnsubscribeHeads(rpchelper.HeadsSubID(cutIndex)); ok {
-		isDeleted = true
+	cutIndex := index
+	if len(index) >= 2 && index[0] == '0' && (index[1] == 'x' || index[1] == 'X') {
+		cutIndex = index[2:]
 	}
-	if ok := api.filters.UnsubscribePendingTxs(rpchelper.PendingTxsSubID(cutIndex)); ok {
-		isDeleted = true
+	isDeleted = api.filters.UnsubscribeHeads(rpchelper.HeadsSubID(cutIndex)) ||
+		api.filters.UnsubscribePendingTxs(rpchelper.PendingTxsSubID(cutIndex))
+	id, err := hexutil.DecodeUint64(index)
+	if err == nil {
+		return isDeleted || api.filters.UnsubscribeLogs(rpchelper.LogsSubID(id)), nil
 	}
-	if ok := api.filters.UnsubscribeLogs(rpchelper.LogsSubID(cutIndex)); ok {
-		isDeleted = true
-	}
-	return
+
+	return isDeleted, nil
 }
 
-// GetFilterChanges implements eth_getFilterChanges.
-// Polling method for a previously-created filter
-// returns an array of logs, block headers, or pending transactions which occurred since last poll.
-func (api *APIImpl) GetFilterChanges(_ context.Context, index string) ([]any, error) {
+// GetFilterChanges implements eth_getFilterChanges. Polling method for a previously-created filter, which returns an array of logs which occurred since last poll.
+func (api *APIImpl) GetFilterChanges(_ context.Context, index string) ([]interface{}, error) {
 	if api.filters == nil {
 		return nil, rpc.ErrNotificationsUnsupported
 	}
-	stub := make([]any, 0)
+	stub := make([]interface{}, 0)
+
 	// remove 0x
-	cutIndex := strings.TrimPrefix(index, "0x")
+	cutIndex := index
+	if len(index) >= 2 && index[0] == '0' && (index[1] == 'x' || index[1] == 'X') {
+		cutIndex = index[2:]
+	}
 	if blocks, ok := api.filters.ReadPendingBlocks(rpchelper.HeadsSubID(cutIndex)); ok {
 		for _, v := range blocks {
 			stub = append(stub, v.Hash())
@@ -99,28 +102,17 @@ func (api *APIImpl) GetFilterChanges(_ context.Context, index string) ([]any, er
 		}
 		return stub, nil
 	}
-	if logs, ok := api.filters.ReadLogs(rpchelper.LogsSubID(cutIndex)); ok {
+	id, err := hexutil.DecodeUint64(index)
+	if err != nil {
+		return stub, nil
+	}
+	if logs, ok := api.filters.ReadLogs(rpchelper.LogsSubID(id)); ok {
 		for _, v := range logs {
 			stub = append(stub, v)
 		}
 		return stub, nil
 	}
 	return stub, nil
-}
-
-// GetFilterLogs implements eth_getFilterLogs.
-// Polling method for a previously-created filter
-// returns an array of logs which occurred since last poll.
-func (api *APIImpl) GetFilterLogs(_ context.Context, index string) ([]*types.Log, error) {
-	if api.filters == nil {
-		return nil, rpc.ErrNotificationsUnsupported
-	}
-	cutIndex := strings.TrimPrefix(index, "0x")
-	logs, ok := api.filters.ReadLogs(rpchelper.LogsSubID(cutIndex))
-	if len(logs) == 0 || !ok {
-		return []*types.Log{}, nil
-	}
-	return logs, nil
 }
 
 // NewHeads send a notification each time a new (header) block is appended to the chain.
@@ -139,6 +131,7 @@ func (api *APIImpl) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 		defer debug.LogPanic()
 		headers, id := api.filters.SubscribeNewHeads(32)
 		defer api.filters.UnsubscribeHeads(id)
+
 		for {
 			select {
 			case h, ok := <-headers:

@@ -146,13 +146,9 @@ func TraceTx(
 			}
 		}
 		// Construct the JavaScript tracer to execute with
-		cfg := json.RawMessage("{}")
-		if config != nil && config.TracerConfig != nil {
-			cfg = *config.TracerConfig
-		}
 		if tracer, err = tracers.New(*config.Tracer, &tracers.Context{
 			TxHash: txCtx.TxHash,
-		}, cfg); err != nil {
+		}, json.RawMessage("{}")); err != nil {
 			stream.WriteNil()
 			return err
 		}

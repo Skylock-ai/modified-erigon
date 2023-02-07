@@ -1,7 +1,6 @@
 package state
 
 import (
-	lru "github.com/hashicorp/golang-lru"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 
 	"github.com/ledgerwatch/erigon/cl/clparams"
@@ -56,11 +55,6 @@ type BeaconState struct {
 	leaves            [32][32]byte            // Pre-computed leaves.
 	touchedLeaves     map[StateLeafIndex]bool // Maps each leaf to whether they were touched or not.
 	publicKeyIndicies map[[48]byte]uint64
-	// Caches
-	activeValidatorsCache   *lru.Cache
-	committeeCache          *lru.Cache
-	shuffledSetsCache       *lru.Cache
-	totalActiveBalanceCache uint64
 	// Configs
 	beaconConfig *clparams.BeaconChainConfig
 }
@@ -101,37 +95,10 @@ func (b *BeaconState) BlockRoot() ([32]byte, error) {
 	}).HashSSZ()
 }
 
-func (b *BeaconState) _refreshActiveBalances() {
-	epoch := b.Epoch()
-	b.totalActiveBalanceCache = 0
-	for _, validator := range b.validators {
-		if validator.Active(epoch) {
-			b.totalActiveBalanceCache += validator.EffectiveBalance
-		}
-	}
-}
-
 func (b *BeaconState) initBeaconState() {
-	if b.touchedLeaves == nil {
-		b.touchedLeaves = make(map[StateLeafIndex]bool)
-	}
+	b.touchedLeaves = make(map[StateLeafIndex]bool)
 	b.publicKeyIndicies = make(map[[48]byte]uint64)
-	b._refreshActiveBalances()
 	for i, validator := range b.validators {
 		b.publicKeyIndicies[validator.PublicKey] = uint64(i)
-	}
-	// 5 Epochs at a time is reasonable.
-	var err error
-	b.activeValidatorsCache, err = lru.New(5)
-	if err != nil {
-		panic(err)
-	}
-	b.shuffledSetsCache, err = lru.New(25)
-	if err != nil {
-		panic(err)
-	}
-	b.committeeCache, err = lru.New(256)
-	if err != nil {
-		panic(err)
 	}
 }

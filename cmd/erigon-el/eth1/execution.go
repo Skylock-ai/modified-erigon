@@ -88,6 +88,7 @@ func (e *Eth1Execution) InsertBodies(ctx context.Context, req *execution.InsertB
 				Amount:    withdrawal.Amount,
 			})
 		}
+
 		if _, _, err := rawdb.WriteRawBodyIfNotExists(tx, gointerfaces.ConvertH256ToHash(body.BlockHash),
 			body.BlockNumber, &types.RawBody{
 				Transactions: body.Transactions,
@@ -351,7 +352,6 @@ func HeaderRpcToHeader(header *execution.Header) (*types.Header, error) {
 	if blockHash != h.Hash() {
 		return nil, fmt.Errorf("block %d, %x has invalid hash. expected: %x", header.BlockNumber, h.Hash(), blockHash)
 	}
-	h.BlockHashCL = blockHash
 	return h, nil
 }
 

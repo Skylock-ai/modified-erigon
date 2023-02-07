@@ -368,9 +368,7 @@ func (s *Service) login(conn *connWrapper) error {
 
 	protocols := make([]string, 0, len(s.servers))
 	for _, srv := range s.servers {
-		for _, p := range srv.Protocols {
-			protocols = append(protocols, fmt.Sprintf("%s/%d", p.Name, p.Version))
-		}
+		protocols = append(protocols, fmt.Sprintf("%s/%d", srv.Protocol.Name, srv.Protocol.Version))
 	}
 	nodeName := "Erigon"
 	if len(s.servers) > 0 {
@@ -680,10 +678,7 @@ func (s *Service) reportStats(conn *connWrapper) error {
 	// TODO(Giulio2002): peer tracking
 	peerCount := 0
 	for _, srv := range s.servers {
-		counts := srv.SimplePeerCount()
-		for _, count := range counts {
-			peerCount += count
-		}
+		peerCount += srv.SimplePeerCount()
 	}
 	stats := map[string]interface{}{
 		"id": s.node,

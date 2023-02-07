@@ -48,7 +48,7 @@ const MaxBuilders = 128
 var UnknownPayloadErr = rpc.CustomError{Code: -38001, Message: "Unknown payload"}
 var InvalidForkchoiceStateErr = rpc.CustomError{Code: -38002, Message: "Invalid forkchoice state"}
 var InvalidPayloadAttributesErr = rpc.CustomError{Code: -38003, Message: "Invalid payload attributes"}
-var TooLargeRequestErr = rpc.CustomError{Code: -38004, Message: "Too large request"}
+var InvalidParamsErr = rpc.CustomError{Code: -32602, Message: "Invalid params"}
 
 type EthBackendServer struct {
 	remote.UnimplementedETHBACKENDServer // must be embedded to have forward compatible implementations.
@@ -268,27 +268,32 @@ func convertPayloadStatus(payloadStatus *engineapi.PayloadStatus) *remote.Engine
 }
 
 func (s *EthBackendServer) stageLoopIsBusy() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	wait, ok := s.hd.BeaconRequestList.WaitForWaiting(ctx)
-	if !ok {
+	waiter := make(chan struct{})
+	defer libcommon.SafeClose(waiter)
+
+	busy := true
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
 		select {
-		case <-wait:
-		case <-ctx.Done():
+		case <-time.After(1 * time.Second):
+			// timed out so just call done
+			fmt.Println("hexo: timed out")
+			wg.Done()
+		case <-waiter:
+			// state is now waiting so we're not busy
+			fmt.Println("hexo: finished waiting")
+			busy = false
+			wg.Done()
 		}
-	}
+	}()
 
-	return !s.hd.BeaconRequestList.IsWaiting()
-}
+	s.hd.BeaconRequestList.WaitForWaiting(waiter)
 
-func (s *EthBackendServer) checkWithdrawalsPresence(time uint64, withdrawals []*types.Withdrawal) error {
-	if !s.config.IsShanghai(time) && withdrawals != nil {
-		return &rpc.InvalidParamsError{Message: "withdrawals before shanghai"}
-	}
-	if s.config.IsShanghai(time) && withdrawals == nil {
-		return &rpc.InvalidParamsError{Message: "missing withdrawals list"}
-	}
-	return nil
+	wg.Wait()
+
+	return busy
 }
 
 // EngineNewPayload validates and possibly executes payload
@@ -321,8 +326,8 @@ func (s *EthBackendServer) EngineNewPayload(ctx context.Context, req *types2.Exe
 		header.WithdrawalsHash = &wh
 	}
 
-	if err := s.checkWithdrawalsPresence(header.Time, withdrawals); err != nil {
-		return nil, err
+	if !s.config.IsShanghai(header.Time) && withdrawals != nil || s.config.IsShanghai(header.Time) && withdrawals == nil {
+		return nil, &InvalidParamsErr
 	}
 
 	blockHash := gointerfaces.ConvertH256ToHash(req.BlockHash)
@@ -664,8 +669,9 @@ func (s *EthBackendServer) EngineForkChoiceUpdated(ctx context.Context, req *rem
 		param.Withdrawals = ConvertWithdrawalsFromRpc(payloadAttributes.Withdrawals)
 	}
 
-	if err := s.checkWithdrawalsPresence(payloadAttributes.Timestamp, param.Withdrawals); err != nil {
-		return nil, err
+	if (!s.config.IsShanghai(payloadAttributes.Timestamp) && param.Withdrawals != nil) ||
+		(s.config.IsShanghai(payloadAttributes.Timestamp) && param.Withdrawals == nil) {
+		return nil, &InvalidParamsErr
 	}
 
 	// Initiate payload building
@@ -718,24 +724,24 @@ func (s *EthBackendServer) EngineGetPayloadBodiesByRangeV1(ctx context.Context, 
 		return nil, err
 	}
 
-	bodies := make([]*types2.ExecutionPayloadBodyV1, 0, request.Count)
+	bodies := make([]*types2.ExecutionPayloadBodyV1, request.Count)
 
-	for i := uint64(0); i < request.Count; i++ {
-		hash, err := rawdb.ReadCanonicalHash(tx, request.Start+i)
+	var i uint64
+	for i = 0; i < request.Count; i++ {
+		block, err := rawdb.ReadBlockByNumber(tx, request.Start+i)
 		if err != nil {
 			return nil, err
 		}
-		if hash == (libcommon.Hash{}) {
-			// break early if beyond the last known canonical header
-			break
-		}
-
-		block := rawdb.ReadBlock(tx, hash, request.Start+i)
 		body, err := extractPayloadBodyFromBlock(block)
 		if err != nil {
 			return nil, err
 		}
-		bodies = append(bodies, body)
+		if body == nil {
+			// break early if the body is nil to trim the response.  A missing body indicates we don't have the
+			// canonical block so can just stop outputting from here
+			break
+		}
+		bodies[i] = body
 	}
 
 	return &remote.EngineGetPayloadBodiesV1Response{Bodies: bodies}, nil

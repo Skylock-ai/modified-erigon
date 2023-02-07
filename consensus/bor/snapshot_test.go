@@ -1,13 +1,13 @@
 package bor
 
 import (
-	"math/big"
+	"math/rand"
 	"sort"
 	"testing"
+	"time"
 
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon/consensus/bor/valset"
-	crand "github.com/maticnetwork/crand"
 	"github.com/stretchr/testify/require"
 )
 
@@ -105,7 +105,6 @@ func TestGetSignerSuccessionNumber_ProposerNotFound(t *testing.T) {
 }
 
 func TestGetSignerSuccessionNumber_SignerNotFound(t *testing.T) {
-	t.Skip("TODO: fixme please")
 	t.Parallel()
 
 	validators := buildRandomValidatorSet(numVals)
@@ -123,14 +122,13 @@ func TestGetSignerSuccessionNumber_SignerNotFound(t *testing.T) {
 }
 
 func buildRandomValidatorSet(numVals int) []*valset.Validator {
+	rand.Seed(time.Now().Unix())
 	validators := make([]*valset.Validator, numVals)
 	for i := 0; i < numVals; i++ {
-		power := crand.BigInt(big.NewInt(99))
-		// cannot process validators with voting power 0, hence +1
-		powerN := power.Int64() + 1
 		validators[i] = &valset.Validator{
-			Address:     randomAddress(),
-			VotingPower: powerN,
+			Address: randomAddress(),
+			// cannot process validators with voting power 0, hence +1
+			VotingPower: int64(rand.Intn(99) + 1),
 		}
 	}
 
@@ -140,5 +138,7 @@ func buildRandomValidatorSet(numVals int) []*valset.Validator {
 }
 
 func randomAddress() libcommon.Address {
-	return crand.NewRand().Address()
+	bytes := make([]byte, 32)
+	rand.Read(bytes)
+	return libcommon.BytesToAddress(bytes)
 }

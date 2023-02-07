@@ -1,9 +1,8 @@
 package cltypes
 
 import (
-	"fmt"
-
 	"github.com/ledgerwatch/erigon/cl/cltypes/ssz_utils"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -31,7 +30,7 @@ func (r *BeaconBlocksByRootRequest) HashSSZ() ([32]byte, error) {
 // EncodeSSZ Marshals the block by roots request type into the serialized object.
 func (r *BeaconBlocksByRootRequest) EncodeSSZ(dst []byte) ([]byte, error) {
 	if len(*r) > maxRequestBlocks {
-		return nil, fmt.Errorf("beacon block by roots request exceeds max size: %d > %d", len(*r), maxRequestBlocks)
+		return nil, errors.Errorf("beacon block by roots request exceeds max size: %d > %d", len(*r), maxRequestBlocks)
 	}
 	buf := make([]byte, 0, r.EncodingSizeSSZ())
 	for _, r := range *r {
@@ -51,7 +50,7 @@ func (r *BeaconBlocksByRootRequest) DecodeSSZ(buf []byte) error {
 	bufLen := len(buf)
 	maxLength := maxRequestBlocks * rootLength
 	if bufLen > maxLength {
-		return fmt.Errorf("expected buffer with length of upto %d but received length %d", maxLength, bufLen)
+		return errors.Errorf("expected buffer with length of upto %d but received length %d", maxLength, bufLen)
 	}
 	if bufLen%rootLength != 0 {
 		return ssz_utils.ErrBufferNotRounded

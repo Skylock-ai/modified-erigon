@@ -4,28 +4,22 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"sort"
 
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon/cl/clparams"
 	"github.com/ledgerwatch/erigon/cl/cltypes"
 	"github.com/ledgerwatch/erigon/cl/fork"
 	"github.com/ledgerwatch/erigon/cl/utils"
-	eth2_shuffle "github.com/protolambda/eth2-shuffle"
 )
 
 // GetActiveValidatorsIndices returns the list of validator indices active for the given epoch.
 func (b *BeaconState) GetActiveValidatorsIndices(epoch uint64) (indicies []uint64) {
-	if cachedIndicies, ok := b.activeValidatorsCache.Get(epoch); ok {
-		return cachedIndicies.([]uint64)
-	}
 	for i, validator := range b.validators {
 		if !validator.Active(epoch) {
 			continue
 		}
 		indicies = append(indicies, uint64(i))
 	}
-	b.activeValidatorsCache.Add(epoch, indicies)
 	return
 }
 
@@ -94,10 +88,7 @@ func (b *BeaconState) GetTotalBalance(validatorSet []uint64) (uint64, error) {
 
 // GetTotalActiveBalance return the sum of all balances within active validators.
 func (b *BeaconState) GetTotalActiveBalance() (uint64, error) {
-	if b.totalActiveBalanceCache < b.beaconConfig.EffectiveBalanceIncrement {
-		return b.beaconConfig.EffectiveBalanceIncrement, nil
-	}
-	return b.totalActiveBalanceCache, nil
+	return b.GetTotalBalance(b.GetActiveValidatorsIndices(b.Epoch()))
 }
 
 // GetTotalSlashingAmount return the sum of all slashings.
@@ -137,24 +128,18 @@ func (b *BeaconState) GetDomain(domainType [4]byte, epoch uint64) ([]byte, error
 	return fork.ComputeDomain(domainType[:], forkVersion, b.genesisValidatorsRoot)
 }
 
-func (b *BeaconState) ComputeShuffledIndexPreInputs(seed [32]byte) [][32]byte {
-	ret := make([][32]byte, b.beaconConfig.ShuffleRoundCount)
-	for i := range ret {
-		ret[i] = utils.Keccak256(append(seed[:], byte(i)))
-	}
-	return ret
-}
-
-func (b *BeaconState) ComputeShuffledIndex(ind, ind_count uint64, seed [32]byte, preInputs [][32]byte, hashFunc utils.HashFunc) (uint64, error) {
+func (b *BeaconState) ComputeShuffledIndex(ind, ind_count uint64, seed [32]byte) (uint64, error) {
 	if ind >= ind_count {
 		return 0, fmt.Errorf("index=%d must be less than the index count=%d", ind, ind_count)
 	}
-	if len(preInputs) == 0 {
-		preInputs = b.ComputeShuffledIndexPreInputs(seed)
-	}
+
 	for i := uint64(0); i < b.beaconConfig.ShuffleRoundCount; i++ {
+		// Construct first hash input.
+		input := append(seed[:], byte(i))
+		hashedInput := utils.Keccak256(input)
+
 		// Read hash value.
-		hashValue := binary.LittleEndian.Uint64(preInputs[i][:8])
+		hashValue := binary.LittleEndian.Uint64(hashedInput[:8])
 
 		// Caclulate pivot and flip.
 		pivot := hashValue % ind_count
@@ -171,7 +156,8 @@ func (b *BeaconState) ComputeShuffledIndex(ind, ind_count uint64, seed [32]byte,
 		binary.LittleEndian.PutUint32(positionByteArray, uint32(position>>8))
 		input2 := append(seed[:], byte(i))
 		input2 = append(input2, positionByteArray...)
-		hashedInput2 := hashFunc(input2)
+
+		hashedInput2 := utils.Keccak256(input2)
 		// Read hash value.
 		byteVal := hashedInput2[(position%256)/8]
 		bitVal := (byteVal >> (position % 8)) % 2
@@ -182,26 +168,6 @@ func (b *BeaconState) ComputeShuffledIndex(ind, ind_count uint64, seed [32]byte,
 	return ind, nil
 }
 
-func (b *BeaconState) ComputeCommittee(indicies []uint64, seed libcommon.Hash, index, count uint64, preInputs [][32]byte, hashFunc utils.HashFunc) ([]uint64, error) {
-	lenIndicies := uint64(len(indicies))
-	start := (lenIndicies * index) / count
-	end := (lenIndicies * (index + 1)) / count
-	var shuffledIndicies []uint64
-	if shuffledIndicesInterface, ok := b.shuffledSetsCache.Get(seed); ok {
-		shuffledIndicies = shuffledIndicesInterface.([]uint64)
-	} else {
-		shuffledIndicies = make([]uint64, lenIndicies)
-		copy(shuffledIndicies, indicies)
-		eth2ShuffleHashFunc := func(data []byte) []byte {
-			hashed := hashFunc(data)
-			return hashed[:]
-		}
-		eth2_shuffle.UnshuffleList(eth2ShuffleHashFunc, shuffledIndicies, uint8(b.beaconConfig.ShuffleRoundCount), seed)
-		b.shuffledSetsCache.Add(seed, shuffledIndicies)
-	}
-	return shuffledIndicies[start:end], nil
-}
-
 func (b *BeaconState) ComputeProposerIndex(indices []uint64, seed [32]byte) (uint64, error) {
 	if len(indices) == 0 {
 		return 0, fmt.Errorf("must have >0 indices")
@@ -210,9 +176,8 @@ func (b *BeaconState) ComputeProposerIndex(indices []uint64, seed [32]byte) (uin
 	i := uint64(0)
 	total := uint64(len(indices))
 	buf := make([]byte, 8)
-	preInputs := b.ComputeShuffledIndexPreInputs(seed)
 	for {
-		shuffled, err := b.ComputeShuffledIndex(i%total, total, seed, preInputs, utils.Keccak256)
+		shuffled, err := b.ComputeShuffledIndex(i%total, total, seed)
 		if err != nil {
 			return 0, err
 		}
@@ -223,12 +188,8 @@ func (b *BeaconState) ComputeProposerIndex(indices []uint64, seed [32]byte) (uin
 		binary.LittleEndian.PutUint64(buf, i/32)
 		input := append(seed[:], buf...)
 		randomByte := uint64(utils.Keccak256(input)[i%32])
-
-		validator, err := b.ValidatorAt(int(candidateIndex))
-		if err != nil {
-			return 0, err
-		}
-		if validator.EffectiveBalance*maxRandomByte >= clparams.MainnetBeaconConfig.MaxEffectiveBalance*randomByte {
+		effectiveBalance := b.validators[candidateIndex].EffectiveBalance
+		if effectiveBalance*maxRandomByte >= clparams.MainnetBeaconConfig.MaxEffectiveBalance*randomByte {
 			return candidateIndex, nil
 		}
 		i += 1
@@ -249,7 +210,7 @@ func (b *BeaconState) GetBeaconProposerIndex() (uint64, error) {
 	binary.LittleEndian.PutUint64(slotByteArray, b.Slot())
 
 	// Add slot to the end of the input.
-	inputWithSlot := append(input[:], slotByteArray...)
+	inputWithSlot := append(input, slotByteArray...)
 
 	// Calculate the hash.
 	hash.Write(inputWithSlot)
@@ -264,27 +225,20 @@ func (b *BeaconState) GetBeaconProposerIndex() (uint64, error) {
 	return b.ComputeProposerIndex(indices, seedArray)
 }
 
-func (b *BeaconState) GetSeed(epoch uint64, domain [4]byte) libcommon.Hash {
+func (b *BeaconState) GetSeed(epoch uint64, domain [4]byte) []byte {
 	mix := b.GetRandaoMixes(epoch + b.beaconConfig.EpochsPerHistoricalVector - b.beaconConfig.MinSeedLookahead - 1)
 	epochByteArray := make([]byte, 8)
 	binary.LittleEndian.PutUint64(epochByteArray, epoch)
 	input := append(domain[:], epochByteArray...)
 	input = append(input, mix[:]...)
-	return utils.Keccak256(input)
+	hash := sha256.New()
+	hash.Write(input)
+	return hash.Sum(nil)
 }
 
 // BaseRewardPerIncrement return base rewards for processing sync committee and duties.
 func (b *BeaconState) baseRewardPerIncrement(totalActiveBalance uint64) uint64 {
 	return b.beaconConfig.EffectiveBalanceIncrement * b.beaconConfig.BaseRewardFactor / utils.IntegerSquareRoot(totalActiveBalance)
-}
-
-// BaseReward return base rewards for processing sync committee and duties.
-func (b *BeaconState) BaseReward(totalActiveBalance, index uint64) (uint64, error) {
-	validator, err := b.ValidatorAt(int(index))
-	if err != nil {
-		return 0, err
-	}
-	return (validator.EffectiveBalance / b.beaconConfig.EffectiveBalanceIncrement) * b.baseRewardPerIncrement(totalActiveBalance), nil
 }
 
 // SyncRewards returns the proposer reward and the sync participant reward given the total active balance in state.
@@ -318,109 +272,4 @@ func (b *BeaconState) ValidatorFromDeposit(deposit *cltypes.Deposit) *cltypes.Va
 		WithdrawableEpoch:          b.beaconConfig.FarFutureEpoch,
 		EffectiveBalance:           effectiveBalance,
 	}
-}
-
-// CommitteeCount returns current number of committee for epoch.
-func (b *BeaconState) CommitteeCount(epoch uint64) uint64 {
-	committeCount := uint64(len(b.GetActiveValidatorsIndices(epoch))) / b.beaconConfig.SlotsPerEpoch / b.beaconConfig.TargetCommitteeSize
-	if b.beaconConfig.MaxCommitteesPerSlot < committeCount {
-		committeCount = b.beaconConfig.MaxCommitteesPerSlot
-	}
-	if committeCount < 1 {
-		committeCount = 1
-	}
-	return committeCount
-}
-
-func (b *BeaconState) GetAttestationParticipationFlagIndicies(data *cltypes.AttestationData, inclusionDelay uint64) ([]uint8, error) {
-	var justifiedCheckpoint *cltypes.Checkpoint
-	// get checkpoint from epoch
-	if data.Target.Epoch == b.Epoch() {
-		justifiedCheckpoint = b.currentJustifiedCheckpoint
-	} else {
-		justifiedCheckpoint = b.previousJustifiedCheckpoint
-	}
-	// Matching roots
-	if *data.Source != *justifiedCheckpoint {
-		return nil, fmt.Errorf("GetAttestationParticipationFlagIndicies: source does not match")
-	}
-	targetRoot, err := b.GetBlockRoot(data.Target.Epoch)
-	if err != nil {
-		return nil, err
-	}
-	headRoot, err := b.GetBlockRootAtSlot(data.Slot)
-	if err != nil {
-		return nil, err
-	}
-	matchingTarget := data.Target.Root == targetRoot
-	matchingHead := matchingTarget && data.BeaconBlockHash == headRoot
-	participationFlagIndicies := []uint8{}
-	if inclusionDelay <= utils.IntegerSquareRoot(b.beaconConfig.SlotsPerEpoch) {
-		participationFlagIndicies = append(participationFlagIndicies, b.beaconConfig.TimelySourceFlagIndex)
-	}
-	if matchingTarget && inclusionDelay <= b.beaconConfig.SlotsPerEpoch {
-		participationFlagIndicies = append(participationFlagIndicies, b.beaconConfig.TimelyTargetFlagIndex)
-	}
-	if matchingHead && inclusionDelay == b.beaconConfig.MinAttestationInclusionDelay {
-		participationFlagIndicies = append(participationFlagIndicies, b.beaconConfig.TimelyHeadFlagIndex)
-	}
-	return participationFlagIndicies, nil
-}
-
-func (b *BeaconState) GetBeaconCommitee(slot, committeeIndex uint64) ([]uint64, error) {
-	var cacheKey [16]byte
-	binary.BigEndian.PutUint64(cacheKey[:], slot)
-	binary.BigEndian.PutUint64(cacheKey[8:], committeeIndex)
-	if cachedCommittee, ok := b.committeeCache.Get(cacheKey); ok {
-		return cachedCommittee.([]uint64), nil
-	}
-	epoch := b.GetEpochAtSlot(slot)
-	committeesPerSlot := b.CommitteeCount(epoch)
-	seed := b.GetSeed(epoch, b.beaconConfig.DomainBeaconAttester)
-	preInputs := b.ComputeShuffledIndexPreInputs(seed)
-	hashFunc := utils.OptimizedKeccak256()
-	committee, err := b.ComputeCommittee(
-		b.GetActiveValidatorsIndices(epoch),
-		seed,
-		(slot%b.beaconConfig.SlotsPerEpoch)*committeesPerSlot+committeeIndex,
-		committeesPerSlot*b.beaconConfig.SlotsPerEpoch,
-		preInputs,
-		hashFunc,
-	)
-	if err != nil {
-		return nil, err
-	}
-	b.committeeCache.Add(cacheKey, committee)
-	return committee, nil
-}
-
-func (b *BeaconState) GetIndexedAttestation(attestation *cltypes.Attestation, attestingIndicies []uint64) (*cltypes.IndexedAttestation, error) {
-	// Sort the the attestation indicies.
-	sort.Slice(attestingIndicies, func(i, j int) bool {
-		return attestingIndicies[i] < attestingIndicies[j]
-	})
-	return &cltypes.IndexedAttestation{
-		AttestingIndices: attestingIndicies,
-		Data:             attestation.Data,
-		Signature:        attestation.Signature,
-	}, nil
-}
-
-func (b *BeaconState) GetAttestingIndicies(attestation *cltypes.AttestationData, aggregationBits []byte) ([]uint64, error) {
-	committee, err := b.GetBeaconCommitee(attestation.Slot, attestation.Index)
-	if err != nil {
-		return nil, err
-	}
-	attestingIndices := []uint64{}
-	for i, member := range committee {
-		bitIndex := i % 8
-		sliceIndex := i / 8
-		if sliceIndex >= len(aggregationBits) {
-			return nil, fmt.Errorf("GetAttestingIndicies: committee is too big")
-		}
-		if (aggregationBits[sliceIndex] & (1 << bitIndex)) > 0 {
-			attestingIndices = append(attestingIndices, member)
-		}
-	}
-	return attestingIndices, nil
 }

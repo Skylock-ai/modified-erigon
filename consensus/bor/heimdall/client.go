@@ -80,7 +80,7 @@ func (h *HeimdallClient) StateSyncEvents(ctx context.Context, fromID uint64, to 
 			return nil, err
 		}
 
-		log.Debug("Fetching state sync events", "queryParams", url.RawQuery)
+		log.Info("Fetching state sync events", "queryParams", url.RawQuery)
 
 		ctx = withRequestType(ctx, stateSyncRequest)
 

@@ -24,8 +24,6 @@ func (b *BeaconState) SetGenesisValidatorsRoot(genesisValidatorRoot libcommon.Ha
 func (b *BeaconState) SetSlot(slot uint64) {
 	b.touchedLeaves[SlotLeafIndex] = true
 	b.slot = slot
-	// If there is a new slot update the active balance cache.
-	b._refreshActiveBalances()
 }
 
 func (b *BeaconState) SetFork(fork *cltypes.Fork) {
@@ -58,15 +56,8 @@ func (b *BeaconState) SetHistoricalRootAt(index int, root [32]byte) {
 	b.historicalRoots[index] = root
 }
 
-func (b *BeaconState) SetValidatorAt(index int, validator *cltypes.Validator) error {
-	if index >= len(b.validators) {
-		return InvalidValidatorIndex
-	}
+func (b *BeaconState) SetValidatorAt(index int, validator *cltypes.Validator) {
 	b.validators[index] = validator
-	// change in validator set means cache purging
-	b.activeValidatorsCache.Purge()
-	b._refreshActiveBalances()
-	return nil
 }
 
 func (b *BeaconState) SetEth1Data(eth1Data *cltypes.Eth1Data) {
@@ -96,33 +87,25 @@ func (b *BeaconState) SetValidators(validators []*cltypes.Validator) {
 	b.initBeaconState()
 }
 
-func (b *BeaconState) AddValidator(validator *cltypes.Validator, balance uint64) {
+func (b *BeaconState) AddValidator(validator *cltypes.Validator) {
 	b.touchedLeaves[ValidatorsLeafIndex] = true
 	b.validators = append(b.validators, validator)
-	b.balances = append(b.balances, balance)
-	if validator.Active(b.Epoch()) {
-		b.totalActiveBalanceCache += validator.EffectiveBalance
-	}
 	b.publicKeyIndicies[validator.PublicKey] = uint64(len(b.validators)) - 1
-	// change in validator set means cache purging
-	b.activeValidatorsCache.Purge()
-
 }
 
 func (b *BeaconState) SetBalances(balances []uint64) {
 	b.touchedLeaves[BalancesLeafIndex] = true
 	b.balances = balances
-	b._refreshActiveBalances()
 }
 
-func (b *BeaconState) SetValidatorBalance(index int, balance uint64) error {
-	if index >= len(b.balances) {
-		return InvalidValidatorIndex
-	}
+func (b *BeaconState) AddBalance(balance uint64) {
+	b.touchedLeaves[BalancesLeafIndex] = true
+	b.balances = append(b.balances, balance)
+}
 
+func (b *BeaconState) SetValidatorBalance(index int, balance uint64) {
 	b.touchedLeaves[BalancesLeafIndex] = true
 	b.balances[index] = balance
-	return nil
 }
 
 func (b *BeaconState) SetRandaoMixAt(index int, mix libcommon.Hash) {
