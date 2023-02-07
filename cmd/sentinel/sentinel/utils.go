@@ -15,28 +15,30 @@ package sentinel
 
 import (
 	"crypto/ecdsa"
+	"crypto/rand"
 	"fmt"
+	"math/big"
 	"net"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/ledgerwatch/erigon/cmd/sentinel/sentinel/peers"
 	"github.com/ledgerwatch/erigon/p2p/enode"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/pkg/errors"
 )
 
 func convertToInterfacePubkey(pubkey *ecdsa.PublicKey) (crypto.PubKey, error) {
 	xVal, yVal := new(btcec.FieldVal), new(btcec.FieldVal)
 	overflows := xVal.SetByteSlice(pubkey.X.Bytes())
 	if overflows {
-		return nil, errors.Errorf("X value overflows")
+		return nil, fmt.Errorf("X value overflows")
 	}
 	overflows = yVal.SetByteSlice(pubkey.Y.Bytes())
 	if overflows {
-		return nil, errors.Errorf("Y value overflows")
+		return nil, fmt.Errorf("Y value overflows")
 	}
 	newKey := crypto.PubKey((*crypto.Secp256k1PublicKey)(btcec.NewPublicKey(xVal, yVal)))
 	// Zero out temporary values.
@@ -61,11 +63,11 @@ func convertToSingleMultiAddr(node *enode.Node) (multiaddr.Multiaddr, error) {
 	pubkey := node.Pubkey()
 	assertedKey, err := convertToInterfacePubkey(pubkey)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not get pubkey")
+		return nil, fmt.Errorf("could not get pubkey: %w", err)
 	}
 	id, err := peer.IDFromPublicKey(assertedKey)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not get peer id")
+		return nil, fmt.Errorf("could not get peer id: %w", err)
 	}
 	return multiAddressBuilderWithID(node.IP().String(), "tcp", uint(node.TCP()), id)
 }
@@ -73,10 +75,10 @@ func convertToSingleMultiAddr(node *enode.Node) (multiaddr.Multiaddr, error) {
 func multiAddressBuilderWithID(ipAddr, protocol string, port uint, id peer.ID) (multiaddr.Multiaddr, error) {
 	parsedIP := net.ParseIP(ipAddr)
 	if parsedIP.To4() == nil && parsedIP.To16() == nil {
-		return nil, errors.Errorf("invalid ip address provided: %s", ipAddr)
+		return nil, fmt.Errorf("invalid ip address provided: %s", ipAddr)
 	}
 	if id.String() == "" {
-		return nil, errors.New("empty peer id given")
+		return nil, fmt.Errorf("empty peer id given")
 	}
 	if parsedIP.To4() != nil {
 		return multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/%s/%d/p2p/%s", ipAddr, protocol, port, id.String()))
@@ -102,7 +104,7 @@ func convertToMultiAddr(nodes []*enode.Node) []multiaddr.Multiaddr {
 }
 
 // will iterate onto randoms nodes until our sentinel connects to one
-func connectToRandomPeer(s *Sentinel, topic string) (peerInfo *peer.AddrInfo, err error) {
+func connectToRandomPeer(s *Sentinel, topic string) (peerInfo peer.ID, err error) {
 	var sub *GossipSubscription
 	for t, currSub := range s.subManager.subscriptions {
 		if strings.Contains(t, topic) {
@@ -111,45 +113,45 @@ func connectToRandomPeer(s *Sentinel, topic string) (peerInfo *peer.AddrInfo, er
 	}
 
 	if sub == nil {
-		return nil, fmt.Errorf("no peers")
+		return peer.ID(""), fmt.Errorf("no peers")
 	}
 
 	validPeerList := sub.topic.ListPeers()
-
 	if len(validPeerList) == 0 {
-		return nil, fmt.Errorf("no peers")
+		return peer.ID(""), fmt.Errorf("no peers")
 	}
-
-	iterator := s.listener.RandomNodes()
-	defer iterator.Close()
 
 	connectedPeer := false
+	maxTries := peers.DefaultMaxPeers
+	tries := 0
 	for !connectedPeer {
-		if exists := iterator.Next(); !exists {
+		if tries >= maxTries {
 			break
 		}
+		tries++
+		index := int64(0)
+		if len(validPeerList) > 1 {
+			n, err := rand.Int(rand.Reader, big.NewInt(int64(len(validPeerList)-1)))
+			if err != nil {
+				panic(err)
+			}
+			index = n.Int64()
+		}
 
-		node := iterator.Node()
-		peerInfo, _, err = convertToAddrInfo(node)
-		if !isPeerWhitelisted(peerInfo.ID, validPeerList) {
+		node := validPeerList[index]
+		if !isPeerWhitelisted(node, validPeerList) {
+
 			continue
 		}
-		if err != nil {
-			return nil, fmt.Errorf("error converting to address info, err=%s", err)
-		}
 
-		if err := s.connectWithPeer(s.ctx, *peerInfo, false); err != nil {
-			log.Trace("[Sentinel] couldn't connect to peer", "err", err)
+		if !s.peers.IsPeerAvaiable(node) {
 			continue
 		}
-		connectedPeer = true
+
+		return node, nil
 	}
 
-	if !connectedPeer {
-		return nil, fmt.Errorf("failed to connect to peer")
-	}
-
-	return peerInfo, nil
+	return peer.ID(""), fmt.Errorf("failed to connect to peer")
 
 }
 func isPeerWhitelisted(peer peer.ID, whitelist []peer.ID) bool {
