@@ -1,4 +1,4 @@
-FROM modified_erigon_feb_7
+FROM modified_erigon_feb_7_2_37
 
 # CMD ["/bin/sh"]
 # RUN /bin/sh -c apk add --no-cache ca-certificates &&     mkdir -p /etc/erigon # buildkit

@@ -876,7 +876,7 @@ func NewP2PConfig(
 	nodeName string,
 	staticPeers []string,
 	trustedPeers []string,
-	port,
+	port uint,
 	protocol uint,
 	allowedPorts []uint,
 ) (*p2p.Config, error) {
@@ -886,6 +886,8 @@ func NewP2PConfig(
 		enodeDBPath = filepath.Join(dirs.Nodes, "eth66")
 	case eth.ETH67:
 		enodeDBPath = filepath.Join(dirs.Nodes, "eth67")
+	case eth.ETH68:
+		enodeDBPath = filepath.Join(dirs.Nodes, "eth68")
 	default:
 		return nil, fmt.Errorf("unknown protocol: %v", protocol)
 	}
@@ -906,6 +908,7 @@ func NewP2PConfig(
 		Log:             log.New(),
 		NodeDatabase:    enodeDBPath,
 		AllowedPorts:    allowedPorts,
+		TmpDir:          dirs.Tmp,
 	}
 	if netRestrict != "" {
 		cfg.NetRestrict = new(netutil.Netlist)
@@ -1501,7 +1504,7 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 			panic(err)
 		}
 		log.Info("torrent verbosity", "level", lvl.LogString())
-		version := "erigon: " + params.VersionWithCommit(params.GitCommit, "")
+		version := "erigon: " + params.VersionWithCommit(params.GitCommit)
 		cfg.Downloader, err = downloadercfg2.New(cfg.Dirs.Snap, version, lvl, downloadRate, uploadRate, ctx.Int(TorrentPortFlag.Name), ctx.Int(TorrentConnsPerFileFlag.Name), ctx.Int(TorrentDownloadSlotsFlag.Name))
 		if err != nil {
 			panic(err)
