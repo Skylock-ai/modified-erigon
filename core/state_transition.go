@@ -208,9 +208,9 @@ func (st *StateTransition) buyGas(gasBailout bool) error {
 		// 	return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
 		// }
 		balanceCheck, overflow = balanceCheck.AddOverflow(balanceCheck, st.value)
-		// if overflow {
-		// 	return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
-		// }
+		// 	if overflow {
+		// 		return fmt.Errorf("%w: address %v", ErrInsufficientFunds, st.msg.From().Hex())
+		// 	}
 	}
 	_ = overflow
 	var subBalance = false
@@ -400,11 +400,7 @@ func (st *StateTransition) TransitionDb(refunds bool, gasBailout bool) (*Executi
 	}
 	amount := new(uint256.Int).SetUint64(st.gasUsed())
 	amount.Mul(amount, effectiveTip) // gasUsed * effectiveTip = how much goes to the block producer (miner, validator)
-		st.state.AddBalance(st.evm.Context().Coinbase, amount)
-		st.state.AddBalance(st.evm.Context().Coinbase, amount)
-	}
 	st.state.AddBalance(st.evm.Context().Coinbase, amount)
-	}
 	if !msg.IsFree() && rules.IsLondon && rules.IsEip1559FeeCollector {
 		burntContractAddress := *st.evm.ChainConfig().Eip1559FeeCollector
 		burnAmount := new(uint256.Int).Mul(new(uint256.Int).SetUint64(st.gasUsed()), st.evm.Context().BaseFee)
