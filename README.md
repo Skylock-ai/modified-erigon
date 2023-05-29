@@ -1,3 +1,16 @@
+# Changes we made to erigon:
+
+We did it to surpress some errors we don't want during simulation (ex: gas is under base fee of the last block, thus fails to simulate it)
+
+The changes are made in core/state_transition.go
+
+We just make these modifications: https://github.com/Skylock-ai/modified-erigon/commit/3c6f955d915d94a4ec5af7465e63a605c3f13659
+- Mostly commenting out raises
+- Mind the `_ = overflow` because go won't compile erigon if it has an unused variable
+
+
+
+
 # Erigon
 
 Erigon is an implementation of Ethereum (execution client with light client for consensus layer), on the efficiency
