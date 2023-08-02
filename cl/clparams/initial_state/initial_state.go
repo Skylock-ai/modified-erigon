@@ -4,8 +4,9 @@ import (
 	_ "embed"
 	"fmt"
 
+	"github.com/ledgerwatch/erigon/cl/phase1/core/state"
+
 	"github.com/ledgerwatch/erigon/cl/clparams"
-	"github.com/ledgerwatch/erigon/cmd/erigon-cl/core/state"
 )
 
 //go:embed mainnet.state.ssz
@@ -18,21 +19,21 @@ var sepoliaStateSSZ []byte
 var goerliStateSSZ []byte
 
 // Return genesis state
-func GetGenesisState(network clparams.NetworkType) (*state.BeaconState, error) {
+func GetGenesisState(network clparams.NetworkType) (*state.CachingBeaconState, error) {
 	_, _, config := clparams.GetConfigsByNetwork(network)
 	returnState := state.New(config)
 
 	switch network {
 	case clparams.MainnetNetwork:
-		if err := returnState.DecodeSSZWithVersion(mainnetStateSSZ, int(clparams.Phase0Version)); err != nil {
+		if err := returnState.DecodeSSZ(mainnetStateSSZ, int(clparams.Phase0Version)); err != nil {
 			return nil, err
 		}
 	case clparams.GoerliNetwork:
-		if err := returnState.DecodeSSZWithVersion(goerliStateSSZ, int(clparams.Phase0Version)); err != nil {
+		if err := returnState.DecodeSSZ(goerliStateSSZ, int(clparams.Phase0Version)); err != nil {
 			return nil, err
 		}
 	case clparams.SepoliaNetwork:
-		if err := returnState.DecodeSSZWithVersion(sepoliaStateSSZ, int(clparams.Phase0Version)); err != nil {
+		if err := returnState.DecodeSSZ(sepoliaStateSSZ, int(clparams.Phase0Version)); err != nil {
 			return nil, err
 		}
 	default:

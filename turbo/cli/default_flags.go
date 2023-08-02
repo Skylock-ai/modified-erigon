@@ -4,7 +4,6 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/ledgerwatch/erigon/cmd/utils"
-	"github.com/ledgerwatch/erigon/turbo/logging"
 )
 
 // DefaultFlags contains all flags that are used and supported by Erigon binary.
@@ -48,6 +47,7 @@ var DefaultFlags = []cli.Flag{
 	&StateStreamDisableFlag,
 	&SyncLoopThrottleFlag,
 	&BadBlockFlag,
+	&ExperimentalConsensusSeparationFlag,
 
 	&utils.HTTPEnabledFlag,
 	&utils.GraphQLEnabledFlag,
@@ -73,6 +73,7 @@ var DefaultFlags = []cli.Flag{
 	&utils.RpcGasCapFlag,
 	&utils.RpcBatchLimit,
 	&utils.RpcReturnDataLimit,
+	&utils.RPCGlobalTxFeeCapFlag,
 	&utils.TxpoolApiAddrFlag,
 	&utils.TraceMaxtracesFlag,
 	&HTTPReadTimeoutFlag,
@@ -117,11 +118,7 @@ var DefaultFlags = []cli.Flag{
 	&utils.GpoBlocksFlag,
 	&utils.GpoPercentileFlag,
 	&utils.InsecureUnlockAllowedFlag,
-	&utils.MetricsEnabledFlag,
-	&utils.MetricsHTTPFlag,
-	&utils.MetricsPortFlag,
 	&utils.HistoryV3Flag,
-	&utils.TransactionV3Flag,
 	&utils.IdentityFlag,
 	&utils.CliqueSnapshotCheckpointIntervalFlag,
 	&utils.CliqueSnapshotInmemorySnapshotsFlag,
@@ -147,20 +144,18 @@ var DefaultFlags = []cli.Flag{
 	&utils.HeimdallURLFlag,
 	&utils.WithoutHeimdallFlag,
 	&utils.HeimdallgRPCAddressFlag,
+	&utils.BorBlockPeriodFlag,
+	&utils.BorBlockSizeFlag,
 	&utils.EthStatsURLFlag,
 	&utils.OverrideShanghaiTime,
 
 	&utils.ConfigFlag,
-	&logging.LogConsoleVerbosityFlag,
-	&logging.LogDirVerbosityFlag,
-	&logging.LogDirPathFlag,
-	&logging.LogConsoleJsonFlag,
-	&logging.LogJsonFlag,
-	&logging.LogDirJsonFlag,
 
 	&utils.LightClientDiscoveryAddrFlag,
 	&utils.LightClientDiscoveryPortFlag,
 	&utils.LightClientDiscoveryTCPPortFlag,
 	&utils.SentinelAddrFlag,
 	&utils.SentinelPortFlag,
+
+	&utils.OtsSearchMaxCapFlag,
 }

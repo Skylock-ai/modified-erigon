@@ -14,26 +14,29 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/execution"
 	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon/turbo/engineapi/engine_types"
+	"github.com/ledgerwatch/erigon/turbo/services"
 
 	"github.com/ledgerwatch/erigon/core/rawdb"
 	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/ethdb/privateapi"
 )
 
 type Eth1Execution struct {
 	execution.UnimplementedExecutionServer
 
-	db kv.RwDB
-	mu sync.Mutex
+	db          kv.RwDB
+	blockReader services.FullBlockReader
+	mu          sync.Mutex
 }
 
-func NewEth1Execution(db kv.RwDB) *Eth1Execution {
+func NewEth1Execution(db kv.RwDB, blockReader services.FullBlockReader) *Eth1Execution {
 	return &Eth1Execution{
-		db: db,
+		db:          db,
+		blockReader: blockReader,
 	}
 }
 
-func (e *Eth1Execution) InsertHeaders(ctx context.Context, req *execution.InsertHeadersRequest) (*execution.EmptyMessage, error) {
+func (e *Eth1Execution) InsertHeaders(ctx context.Context, req *execution.InsertHeadersRequest) (*execution.InsertionResult, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	tx, err := e.db.BeginRw(ctx)
@@ -47,12 +50,16 @@ func (e *Eth1Execution) InsertHeaders(ctx context.Context, req *execution.Insert
 		if err != nil {
 			return nil, err
 		}
-		rawdb.WriteHeader(tx, h)
+		if err := rawdb.WriteHeader(tx, h); err != nil {
+			return nil, err
+		}
 	}
-	return &execution.EmptyMessage{}, tx.Commit()
+	return &execution.InsertionResult{
+		Result: execution.ExecutionStatus_Success,
+	}, tx.Commit()
 }
 
-func (e *Eth1Execution) InsertBodies(ctx context.Context, req *execution.InsertBodiesRequest) (*execution.EmptyMessage, error) {
+func (e *Eth1Execution) InsertBodies(ctx context.Context, req *execution.InsertBodiesRequest) (*execution.InsertionResult, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	tx, err := e.db.BeginRw(ctx)
@@ -80,7 +87,7 @@ func (e *Eth1Execution) InsertBodies(ctx context.Context, req *execution.InsertB
 				Amount:    withdrawal.Amount,
 			})
 		}
-		if _, _, err := rawdb.WriteRawBodyIfNotExists(tx, gointerfaces.ConvertH256ToHash(body.BlockHash),
+		if _, err := rawdb.WriteRawBodyIfNotExists(tx, gointerfaces.ConvertH256ToHash(body.BlockHash),
 			body.BlockNumber, &types.RawBody{
 				Transactions: body.Transactions,
 				Uncles:       uncles,
@@ -89,7 +96,9 @@ func (e *Eth1Execution) InsertBodies(ctx context.Context, req *execution.InsertB
 			return nil, err
 		}
 	}
-	return &execution.EmptyMessage{}, tx.Commit()
+	return &execution.InsertionResult{
+		Result: execution.ExecutionStatus_Success,
+	}, tx.Commit()
 }
 
 type canonicalEntry struct {
@@ -97,12 +106,12 @@ type canonicalEntry struct {
 	number uint64
 }
 
-func (e *Eth1Execution) UpdateForkChoice(ctx context.Context, hash *types2.H256) (*execution.ForkChoiceReceipt, error) {
+func (e *Eth1Execution) UpdateForkChoice(ctx context.Context, fcu *execution.ForkChoice) (*execution.ForkChoiceReceipt, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return &execution.ForkChoiceReceipt{
-		LatestValidHash: hash,
-		Success:         true,
+		LatestValidHash: fcu.HeadBlockHash,
+		Status:          execution.ExecutionStatus_Success,
 	}, nil
 }
 
@@ -119,12 +128,21 @@ func (e *Eth1Execution) GetHeader(ctx context.Context, req *execution.GetSegment
 	var header *types.Header
 	if req.BlockHash != nil && req.BlockNumber != nil {
 		blockHash := gointerfaces.ConvertH256ToHash(req.BlockHash)
-		header = rawdb.ReadHeader(tx, blockHash, *req.BlockNumber)
+		header, err = e.blockReader.Header(ctx, tx, blockHash, *req.BlockNumber)
+		if err != nil {
+			return nil, err
+		}
 	} else if req.BlockHash != nil {
 		blockHash := gointerfaces.ConvertH256ToHash(req.BlockHash)
-		header, err = rawdb.ReadHeaderByHash(tx, blockHash)
+		header, err = e.blockReader.HeaderByHash(ctx, tx, blockHash)
+		if err != nil {
+			return nil, err
+		}
 	} else if req.BlockNumber != nil {
-		header = rawdb.ReadHeaderByNumber(tx, *req.BlockNumber)
+		header, err = e.blockReader.HeaderByNumber(ctx, tx, *req.BlockNumber)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -152,14 +170,26 @@ func (e *Eth1Execution) GetBody(ctx context.Context, req *execution.GetSegmentRe
 	var body *types.Body
 	if req.BlockHash != nil && req.BlockNumber != nil {
 		blockHash := gointerfaces.ConvertH256ToHash(req.BlockHash)
-		body = rawdb.ReadCanonicalBodyWithTransactions(tx, blockHash, *req.BlockNumber)
+		if ok, _, err := rawdb.IsCanonicalHashDeprecated(tx, blockHash); err != nil {
+			return nil, err
+		} else if ok {
+			body, err = e.blockReader.BodyWithTransactions(ctx, tx, blockHash, *req.BlockNumber)
+			if err != nil {
+				return nil, err
+			}
+		}
 	} else if req.BlockHash != nil {
 		blockHash := gointerfaces.ConvertH256ToHash(req.BlockHash)
-		blockNumber := rawdb.ReadHeaderNumber(tx, blockHash)
-		if blockNumber == nil {
-			return nil, nil
+		ok, blockNumber, err := rawdb.IsCanonicalHashDeprecated(tx, blockHash)
+		if err != nil {
+			return nil, err
 		}
-		body = rawdb.ReadCanonicalBodyWithTransactions(tx, blockHash, *blockNumber)
+		if ok {
+			body, err = e.blockReader.BodyWithTransactions(ctx, tx, blockHash, *blockNumber)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -171,7 +201,7 @@ func (e *Eth1Execution) GetBody(ctx context.Context, req *execution.GetSegmentRe
 	if err != nil {
 		return nil, err
 	}
-	rpcWithdrawals := privateapi.ConvertWithdrawalsToRpc(body.Withdrawals)
+	rpcWithdrawals := engine_types.ConvertWithdrawalsToRpc(body.Withdrawals)
 	unclesRpc := make([]*execution.Header, 0, len(body.Uncles))
 	for _, uncle := range body.Uncles {
 		unclesRpc = append(unclesRpc, HeaderToHeaderRPC(uncle))
@@ -233,7 +263,7 @@ func HeaderRpcToHeader(header *execution.Header) (*types.Header, error) {
 		GasUsed:         header.GasUsed,
 		Time:            header.Timestamp,
 		Extra:           header.ExtraData,
-		MixDigest:       gointerfaces.ConvertH256ToHash(header.MixDigest),
+		MixDigest:       gointerfaces.ConvertH256ToHash(header.PrevRandao),
 		Nonce:           blockNonce,
 		BaseFee:         baseFee,
 		WithdrawalsHash: withdrawalHash,
@@ -267,7 +297,7 @@ func HeaderToHeaderRPC(header *types.Header) *execution.Header {
 		TransactionHash: gointerfaces.ConvertHashToH256(header.TxHash),
 		LogsBloom:       gointerfaces.ConvertBytesToH2048(header.Bloom[:]),
 		ReceiptRoot:     gointerfaces.ConvertHashToH256(header.ReceiptHash),
-		MixDigest:       gointerfaces.ConvertHashToH256(header.MixDigest),
+		PrevRandao:      gointerfaces.ConvertHashToH256(header.MixDigest),
 		BlockNumber:     header.Number.Uint64(),
 		Nonce:           header.Nonce.Uint64(),
 		GasLimit:        header.GasLimit,

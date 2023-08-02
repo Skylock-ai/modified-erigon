@@ -68,11 +68,6 @@ func init() {
 var rootCmd = &cobra.Command{
 	Use:   "sentry",
 	Short: "Run p2p sentry",
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		if err := debug.SetupCobra(cmd); err != nil {
-			panic(err)
-		}
-	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		debug.Exit()
 	},
@@ -98,8 +93,8 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 
-		logging.SetupLoggerCmd("sentry", cmd)
-		return sentry.Sentry(cmd.Context(), dirs, sentryAddr, discoveryDNS, p2pConfig, protocol, healthCheck)
+		logger := debug.SetupCobra(cmd, "sentry")
+		return sentry.Sentry(cmd.Context(), dirs, sentryAddr, discoveryDNS, p2pConfig, protocol, healthCheck, logger)
 	},
 }
 
