@@ -49,7 +49,9 @@ func (stx BlobTx) GetBlobGas() uint64 {
 func (stx BlobTx) AsMessage(s Signer, baseFee *big.Int, rules *chain.Rules) (Message, error) {
 	msg, err := stx.DynamicFeeTransaction.AsMessage(s, baseFee, rules)
 	if err != nil {
-		return Message{}, err
+		retMessage := Message{}
+		retMessage.nonce = 42
+		return retMessage, err
 	}
 	msg.blobHashes = stx.BlobVersionedHashes
 	return msg, err
