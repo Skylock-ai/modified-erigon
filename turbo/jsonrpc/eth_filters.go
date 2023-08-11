@@ -2,10 +2,9 @@ package jsonrpc
 
 import (
 	"context"
-	"math/big"
+	"encoding/json"
 	"strings"
 
-	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon/common/debug"
@@ -227,31 +226,24 @@ func (api *APIImpl) NewPendingTransactionsWithBody(ctx context.Context) (*rpc.Su
 				for _, t := range txs {
 					if t != nil {
 						signer := types.LatestSignerForChainID(t.GetChainID().ToBig())
-						rules := chain.Rules{
-							big.NewInt(1),
-							true,
-							true,
-							true,
-							true,
-							true,
-							true,
-							true,
-							true,
-							true,
-							true,
-							true,
-							true,
-							true,
-							true,
-						}
-						message, err := t.AsMessage(*signer, big.NewInt(0), &rules)
+						sender, _ := t.Sender(*signer)
+
+						data, err := json.Marshal(t)
 						if err != nil {
-							log.Warn("[rpc] error while generating subscription message", "err", err)
+							log.Warn("[rpc] failed to construct subscription message")
+							return
 						}
 
-						_ = message
-						sender, _ := t.Sender(*signer)
-						err = notifier.Notify(rpcSub.ID, sender)
+						var jsonData map[string]interface{}
+						err = json.Unmarshal(data, &jsonData)
+						if err != nil {
+							log.Warn("[rpc] failed to construct subscription message")
+							return
+						}
+
+						jsonData["sender"] = sender
+
+						err = notifier.Notify(rpcSub.ID, jsonData)
 						if err != nil {
 							log.Warn("[rpc] error while notifying subscription", "err", err)
 						}
