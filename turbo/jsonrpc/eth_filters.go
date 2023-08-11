@@ -250,7 +250,7 @@ func (api *APIImpl) NewPendingTransactionsWithBody(ctx context.Context) (*rpc.Su
 						}
 
 						_ = message
-						sender, _ := t.GetSender()
+						sender, _ := t.Sender(*signer)
 						err = notifier.Notify(rpcSub.ID, sender)
 						if err != nil {
 							log.Warn("[rpc] error while notifying subscription", "err", err)
