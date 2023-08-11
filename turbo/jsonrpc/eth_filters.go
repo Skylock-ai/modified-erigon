@@ -2,8 +2,10 @@ package jsonrpc
 
 import (
 	"context"
+	"math/big"
 	"strings"
 
+	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon/common/debug"
@@ -225,7 +227,7 @@ func (api *APIImpl) NewPendingTransactionsWithBody(ctx context.Context) (*rpc.Su
 				for _, t := range txs {
 					if t != nil {
 						signer := types.LatestSignerForChainID(t.GetChainID().ToBig())
-						message, err := t.AsMessage(*signer, nil, nil)
+						message, err := t.AsMessage(*signer, big.NewInt(0), &chain.Rules{})
 						if err != nil {
 							log.Warn("[rpc] error while generating subscription message", "err", err)
 						}
