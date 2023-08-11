@@ -241,7 +241,7 @@ func (api *APIImpl) NewPendingTransactionsWithBody(ctx context.Context) (*rpc.Su
 							return
 						}
 
-						jsonData["sender"] = sender
+						jsonData["from"] = sender
 
 						err = notifier.Notify(rpcSub.ID, jsonData)
 						if err != nil {
