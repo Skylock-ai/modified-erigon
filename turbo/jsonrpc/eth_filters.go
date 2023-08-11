@@ -224,7 +224,13 @@ func (api *APIImpl) NewPendingTransactionsWithBody(ctx context.Context) (*rpc.Su
 			case txs, ok := <-txsCh:
 				for _, t := range txs {
 					if t != nil {
-						err := notifier.Notify(rpcSub.ID, t)
+						signer := types.LatestSignerForChainID(t.GetChainID().ToBig())
+						message, err := t.AsMessage(*signer, nil, nil)
+						if err != nil {
+							log.Warn("[rpc] error while generating subscription message", "err", err)
+						}
+
+						err = notifier.Notify(rpcSub.ID, message)
 						if err != nil {
 							log.Warn("[rpc] error while notifying subscription", "err", err)
 						}

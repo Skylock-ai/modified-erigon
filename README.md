@@ -8,8 +8,9 @@ We just make these modifications: https://github.com/Skylock-ai/modified-erigon/
 - Mostly commenting out raises
 - Mind the `_ = overflow` because go won't compile erigon if it has an unused variable
 
-
-
+Changes to response from `newPendingTransactionsWithBody` endpoint
+- Return transaction message instead of marshaled transaction so `from` address is included.
+- Changes affect turbo\jsonrpc\eth_filters.go lines 227-233
 
 # Erigon
 
