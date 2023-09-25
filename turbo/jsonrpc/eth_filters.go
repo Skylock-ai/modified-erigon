@@ -227,6 +227,7 @@ func (api *APIImpl) NewPendingTransactionsWithBody(ctx context.Context) (*rpc.Su
 					if t != nil {
 						signer := types.LatestSignerForChainID(t.GetChainID().ToBig())
 						sender, _ := t.Sender(*signer)
+						senderNonce := t.GetNonce()
 
 						data, err := json.Marshal(t)
 						if err != nil {
@@ -242,6 +243,7 @@ func (api *APIImpl) NewPendingTransactionsWithBody(ctx context.Context) (*rpc.Su
 						}
 
 						jsonData["from"] = sender
+						jsonData["nonce"] = senderNonce
 
 						err = notifier.Notify(rpcSub.ID, jsonData)
 						if err != nil {
