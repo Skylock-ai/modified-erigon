@@ -3,6 +3,7 @@ package jsonrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/ledgerwatch/log/v3"
@@ -227,7 +228,7 @@ func (api *APIImpl) NewPendingTransactionsWithBody(ctx context.Context) (*rpc.Su
 					if t != nil {
 						signer := types.LatestSignerForChainID(t.GetChainID().ToBig())
 						sender, _ := t.Sender(*signer)
-						senderNonce := t.GetNonce()
+						senderNonce := fmt.Sprintf("0x%x", t.GetNonce())
 
 						data, err := json.Marshal(t)
 						if err != nil {
